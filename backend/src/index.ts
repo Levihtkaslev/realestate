@@ -1,6 +1,7 @@
 import "dotenv/config"; // loads values from .env into process.env
 import express from "express";
 import userRoutes from "./routes/user";
+import stateRoutes from "./routes/state";
 import cityRoutes from "./routes/city";
 
 const app = express();
@@ -10,6 +11,7 @@ app.use(express.json());
 
 // every URL starting with /api/users goes to routes/user.ts
 app.use("/api/users", userRoutes);
+app.use("/api/states", stateRoutes);
 app.use("/api/cities", cityRoutes);
 
 app.listen(PORT, () => {
