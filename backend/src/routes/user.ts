@@ -4,19 +4,24 @@ import { prisma } from "../prisma";
 
 const router = Router();
 
-// columns we send back to the client (never send passwordHash)
+
 const userSelect = {
   id: true, name: true, email: true, phone: true, role: true, createdAt: true, updatedAt: true,
 };
 
-// CREATE user  
+
+
+
+//================================================================================ User POST  ==========================================================================
+
 router.post("/", async (req, res) => {
+
   const { name, email, phone, password } = req.body;
 
-  // basic validation (we will replace this with Zod later)
   if (!name || !email || !password) {
     return res.status(400).json({ message: "name, email and password are required" });
   }
+
   if (password.length < 6) {
     return res.status(400).json({ message: "password must be at least 6 characters" });
   }
@@ -26,7 +31,7 @@ router.post("/", async (req, res) => {
     return res.status(409).json({ message: "email already registered" });
   }
 
-  // turn "mypassword" into a one-way hash like "$2b$10$Xk..."
+  //hashing
   const passwordHash = await bcrypt.hash(password, 10);
 
   const user = await prisma.user.create({
@@ -37,17 +42,27 @@ router.post("/", async (req, res) => {
   res.status(201).json(user);
 });
 
-// LIST users  
+
+
+
+//================================================================================ listing user==========================================================================
+
 router.get("/", async (req, res) => {
+
   const users = await prisma.user.findMany({
     select: userSelect,
     orderBy: { id: "asc" },
   });
   res.json(users);
+
 });
 
-// GET one user  
+
+
+
+//================================================================================ One user get  ========================================================================== 
 router.get("/:id", async (req, res) => {
+
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     return res.status(400).json({ message: "invalid id" });
@@ -60,8 +75,14 @@ router.get("/:id", async (req, res) => {
   res.json(user);
 });
 
-// UPDATE user  ->  PUT /api/users/5
+
+
+
+
+//================================================================================ update user ==========================================================================
+
 router.put("/:id", async (req, res) => {
+
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     return res.status(400).json({ message: "invalid id" });
@@ -73,14 +94,14 @@ router.put("/:id", async (req, res) => {
   }
 
   const { name, phone, password } = req.body;
-
-  // only change the fields that were sent; email is not editable
   const data: { name?: string; phone?: string; passwordHash?: string } = {};
   if (name) data.name = name;
   if (phone) data.phone = phone;
   if (password) {
     if (password.length < 6) {
-      return res.status(400).json({ message: "password must be at least 6 characters" });
+      return res.status(400).json({ 
+        message: "password must be at least 6 characters" 
+      });
     }
     data.passwordHash = await bcrypt.hash(password, 10);
   }
@@ -89,8 +110,13 @@ router.put("/:id", async (req, res) => {
   res.json(updated);
 });
 
-// DELETE user  ->  DELETE /api/users/5
+
+
+
+//================================================================================ delete user  ==========================================================================
+
 router.delete("/:id", async (req, res) => {
+
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     return res.status(400).json({ message: "invalid id" });
@@ -104,5 +130,9 @@ router.delete("/:id", async (req, res) => {
   await prisma.user.delete({ where: { id } });
   res.json({ message: "user deleted" });
 });
+
+
+
+
 
 export default router;

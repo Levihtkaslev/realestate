@@ -26,6 +26,8 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
+  properties Property[] // one user can post many properties
+
   @@map("users") // table name in PostgreSQL
 }
 
@@ -57,6 +59,140 @@ model City {
   // a state while any city still points to it
   state State @relation(fields: [stateId], references: [id], onDelete: Restrict)
 
+  localities Locality[] // one city has many localities
+  properties Property[]
+
   @@index([stateId]) // fast "all cities of this state" lookup
   @@map("cities")
+}
+
+model Locality {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  slug      String   @db.VarChar(120) // "Anna Nagar" -> "anna-nagar"
+  cityId    Int      @map("city_id")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // locality belongs to one city; city cannot be deleted while localities exist
+  city City @relation(fields: [cityId], references: [id], onDelete: Restrict)
+
+  properties Property[]
+
+  // same name allowed in different cities, but not twice in one city.
+  // this unique index also makes "all localities of this city" fast
+  @@unique([cityId, slug])
+  @@map("localities")
+}
+
+// Apartment, Villa, Plot, Office Space ...
+model PropertyType {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  slug      String   @unique @db.VarChar(120)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  properties Property[]
+
+  @@map("property_types")
+}
+
+// Parking, Lift, Gym, Swimming Pool ...
+model Amenity {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  slug      String   @unique @db.VarChar(120)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  properties PropertyAmenity[]
+
+  @@map("amenities")
+}
+
+// ---------- PROPERTIES ----------
+
+enum ListingType {
+  SALE
+  RENT
+}
+
+enum Furnishing {
+  FURNISHED
+  SEMI_FURNISHED
+  UNFURNISHED
+}
+
+// ACTIVE = public can see, INACTIVE = hidden by owner, SOLD = sold / rented out
+enum PropertyStatus {
+  ACTIVE
+  INACTIVE
+  SOLD
+}
+
+model Property {
+  id             Int            @id @default(autoincrement())
+  title          String         @db.VarChar(150)
+  slug           String         @unique @db.VarChar(200) // for SEO url of detail page
+  description    String         @db.Text
+  listingType    ListingType    @map("listing_type")
+  price          Int            // whole rupees; for RENT this is monthly rent
+  bedrooms       Int?           // empty for plot / shop
+  bathrooms      Int?
+  areaSqft       Int            @map("area_sqft")
+  furnishing     Furnishing?
+  address        String?        @db.VarChar(255)
+  status         PropertyStatus @default(ACTIVE)
+  ownerId        Int            @map("owner_id")
+  propertyTypeId Int            @map("property_type_id")
+  cityId         Int            @map("city_id")
+  localityId     Int            @map("locality_id")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  // Cascade = when the user is deleted, their properties are deleted too
+  owner        User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  // Restrict = master cannot be deleted while a property uses it
+  propertyType PropertyType @relation(fields: [propertyTypeId], references: [id], onDelete: Restrict)
+  city         City         @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  locality     Locality     @relation(fields: [localityId], references: [id], onDelete: Restrict)
+
+  amenities PropertyAmenity[]
+  images    PropertyImage[]
+
+  @@index([ownerId]) // fast "my listings"
+  @@map("properties")
+}
+
+// photos of a property. The file is on disk (uploads/properties/...), DB keeps only its url
+model PropertyImage {
+  id         Int      @id @default(autoincrement())
+  propertyId Int      @map("property_id")
+  url        String   @db.VarChar(255) // "/uploads/properties/1727100000-123456789.jpg"
+  isCover    Boolean  @default(false) @map("is_cover") // main photo shown on the card
+  sortOrder  Int      @default(0) @map("sort_order")   // display order in the gallery
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // when the property is deleted, its image rows are deleted too
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId]) // fast "all images of this property"
+  @@map("property_images")
+}
+
+// link table: which amenities a property has (many-to-many)
+model PropertyAmenity {
+  propertyId Int @map("property_id")
+  amenityId  Int @map("amenity_id")
+
+  // when the property is deleted, its amenity links are deleted too
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  amenity  Amenity  @relation(fields: [amenityId], references: [id], onDelete: Restrict)
+
+  @@id([propertyId, amenityId]) // same amenity cannot be added twice to one property
+  @@map("property_amenities")
 }

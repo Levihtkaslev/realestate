@@ -3,8 +3,14 @@ import { prisma } from "../prisma";
 
 const router = Router();
 
-// CREATE state  ->  POST /api/states   body: { name, code }
+
+
+
+
+//================================================================================== POST state  ==========================================================================
+
 router.post("/", async (req, res) => {
+
   const { name, code } = req.body;
 
   if (!name || !code) {
@@ -12,7 +18,7 @@ router.post("/", async (req, res) => {
   }
 
   const cleanName = String(name).trim();
-  const cleanCode = String(code).trim().toUpperCase(); // "tn" -> "TN"
+  const cleanCode = String(code).trim().toUpperCase(); // exam "tn"   into this   "TN"
 
   if (!/^[A-Z]{2,5}$/.test(cleanCode)) {
     return res.status(400).json({ message: "code must be 2 to 5 letters, e.g. TN" });
@@ -30,11 +36,17 @@ router.post("/", async (req, res) => {
 
   const state = await prisma.state.create({ data: { name: cleanName, code: cleanCode } });
   res.status(201).json(state);
+
 });
 
-// LIST states  ->  GET /api/states   (only active, for dropdowns)
-//              ->  GET /api/states?all=true   (active + inactive, for admin)
+
+
+
+//================================================================================== LIST state  ==========================================================================
+// LIST all cities    GET /api/states(only active),    GET /api/states?all=true(active + inactive, for admin)
+
 router.get("/", async (req, res) => {
+
   const showAll = req.query.all === "true";
 
   const states = await prisma.state.findMany({
@@ -42,10 +54,17 @@ router.get("/", async (req, res) => {
     orderBy: { name: "asc" },
   });
   res.json(states);
+
 });
 
-// GET one state  ->  GET /api/states/1
+
+
+
+
+//================================================================================== GET state  ==========================================================================
+
 router.get("/:id", async (req, res) => {
+
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     return res.status(400).json({ message: "invalid id" });
@@ -56,10 +75,17 @@ router.get("/:id", async (req, res) => {
     return res.status(404).json({ message: "state not found" });
   }
   res.json(state);
+
 });
 
-// UPDATE state  ->  PUT /api/states/1   body: { name?, code?, isActive? }
+
+
+
+
+//================================================================================== update state  ==========================================================================
+
 router.put("/:id", async (req, res) => {
+
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     return res.status(400).json({ message: "invalid id" });
@@ -100,11 +126,19 @@ router.put("/:id", async (req, res) => {
 
   const updated = await prisma.state.update({ where: { id }, data });
   res.json(updated);
+
 });
 
-// DELETE state  ->  DELETE /api/states/1
+
+
+
+
+
+//================================================================================== delete state  ==========================================================================
 // blocked while any city belongs to this state
+
 router.delete("/:id", async (req, res) => {
+
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     return res.status(400).json({ message: "invalid id" });
@@ -125,5 +159,9 @@ router.delete("/:id", async (req, res) => {
   await prisma.state.delete({ where: { id } });
   res.json({ message: "state deleted" });
 });
+
+
+
+
 
 export default router;

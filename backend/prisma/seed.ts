@@ -42,6 +42,31 @@ const states = [
   { code: "PY", name: "Puducherry" },
 ];
 
+const propertyTypes = [
+  { slug: "apartment", name: "Apartment" },
+  { slug: "independent-house", name: "Independent House" },
+  { slug: "villa", name: "Villa" },
+  { slug: "builder-floor", name: "Builder Floor" },
+  { slug: "plot", name: "Plot" },
+  { slug: "agricultural-land", name: "Agricultural Land" },
+  { slug: "office-space", name: "Office Space" },
+  { slug: "shop", name: "Shop" },
+  { slug: "warehouse", name: "Warehouse" },
+];
+
+const amenities = [
+  { slug: "parking", name: "Parking" },
+  { slug: "lift", name: "Lift" },
+  { slug: "power-backup", name: "Power Backup" },
+  { slug: "security", name: "Security" },
+  { slug: "gym", name: "Gym" },
+  { slug: "swimming-pool", name: "Swimming Pool" },
+  { slug: "club-house", name: "Club House" },
+  { slug: "park", name: "Park" },
+  { slug: "water-supply", name: "24x7 Water Supply" },
+  { slug: "gated-community", name: "Gated Community" },
+];
+
 async function main() {
   for (const s of states) {
     // upsert = update if code exists, otherwise insert
@@ -52,6 +77,24 @@ async function main() {
     });
   }
   console.log(`Seeded ${states.length} states`);
+
+  for (const p of propertyTypes) {
+    await prisma.propertyType.upsert({
+      where: { slug: p.slug },
+      update: { name: p.name },
+      create: p,
+    });
+  }
+  console.log(`Seeded ${propertyTypes.length} property types`);
+
+  for (const a of amenities) {
+    await prisma.amenity.upsert({
+      where: { slug: a.slug },
+      update: { name: a.name },
+      create: a,
+    });
+  }
+  console.log(`Seeded ${amenities.length} amenities`);
 }
 
 main()
