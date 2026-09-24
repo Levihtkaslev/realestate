@@ -2,22 +2,30 @@ import fs from "fs";
 import path from "path";
 import multer from "multer";
 
-// folder where property photos are saved: backend/uploads/properties
+
+// ==============================================================folder : backend/uploads/properties====================================================
+
 export const PROPERTY_UPLOAD_DIR = path.join(process.cwd(), "uploads", "properties");
 
-// create the folder if it does not exist yet
+
+// ================================================================ create the folder if no there=======================================================
+
 fs.mkdirSync(PROPERTY_UPLOAD_DIR, { recursive: true });
+
+
+// =======================================================================ALlowed types=================================================================
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 export const INVALID_TYPE_MESSAGE = "only jpg, png and webp images are allowed";
 
-// where and with what name each file is saved
+
+// =====================================================================where and what name==============================================================
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, PROPERTY_UPLOAD_DIR);
   },
-  filename: (req, file, cb) => {
-    // "house.JPG" -> "1727100000000-482913.jpg" (unique name, keeps extension)
+  filename: (req, file, cb) => {             // "land.JPG" -> "1727100000000-482913.jpg" (unique name, keeps extension)
     const ext = path.extname(file.originalname).toLowerCase();
     const uniqueName = Date.now() + "-" + Math.round(Math.random() * 1000000) + ext;
     cb(null, uniqueName);

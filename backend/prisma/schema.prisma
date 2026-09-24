@@ -26,7 +26,9 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  properties Property[] // one user can post many properties
+  properties    Property[]     // one user can post many properties
+  inquiries     Inquiry[]      // enquiries this user has sent
+  refreshTokens RefreshToken[] // one row per logged-in device
 
   @@map("users") // table name in PostgreSQL
 }
@@ -163,8 +165,19 @@ model Property {
 
   amenities PropertyAmenity[]
   images    PropertyImage[]
+  inquiries Inquiry[]
 
   @@index([ownerId]) // fast "my listings"
+
+  // ---- SEARCH indexes (step 5) ----
+  // rule: columns we match exactly (=) first, then the column we sort / range on, then id (tie-breaker)
+  @@index([listingType, status, cityId, price, id])     // city + budget, sort by price
+  @@index([listingType, status, cityId, createdAt, id]) // city, sort by newest
+  @@index([listingType, status, price, id])             // all cities, sort by price
+  @@index([listingType, status, createdAt, id])         // all cities, sort by newest (home page)
+  @@index([localityId])                                 // locality filter (+ master delete check)
+  @@index([propertyTypeId])                             // type filter (+ master delete check)
+
   @@map("properties")
 }
 
@@ -195,4 +208,39 @@ model PropertyAmenity {
 
   @@id([propertyId, amenityId]) // same amenity cannot be added twice to one property
   @@map("property_amenities")
+}
+
+// ---------- ENQUIRIES (a user contacts the owner of a property) ----------
+
+model Inquiry {
+  id         Int      @id @default(autoincrement())
+  propertyId Int      @map("property_id")
+  userId     Int      @map("user_id") // who is asking (the owner is found through the property)
+  message    String   @db.VarChar(500)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // property or user deleted -> their enquiries are deleted too
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyId, userId]) // DUPLICATE block: one user can enquire a property only once
+  @@index([userId, createdAt])   // fast "how many enquiries did this user send in the last hour"
+  @@map("inquiries")
+}
+
+// ---------- LOGIN (refresh tokens) ----------
+// one row = one login (one device). Logout deletes the row -> that refresh token stops working.
+// We store a HASH of the token, not the token itself: if the DB leaks, the tokens cannot be used.
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  tokenHash String   @unique @map("token_hash") @db.VarChar(64)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
 }

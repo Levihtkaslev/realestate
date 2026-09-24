@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
+import { requireLogin, requireAdmin } from "../middlewares/auth";
 import { makeSlug } from "../utils/slug";
 
 const router = Router();
@@ -9,7 +10,7 @@ const router = Router();
 //================================================================================== POST property type ==========================================================================
 // POST /api/property-types     body: { "name": "Apartment" }
 
-router.post("/", async (req, res) => {
+router.post("/", requireLogin, requireAdmin, async (req, res) => {
 
   const { name } = req.body;
 
@@ -77,7 +78,7 @@ router.get("/:id", async (req, res) => {
 //================================================================================== UPDATE property type ==========================================================================
 // PUT /api/property-types/1     body: { "name"?: "Flat", "isActive"?: false }
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", requireLogin, requireAdmin, async (req, res) => {
 
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
@@ -120,7 +121,7 @@ router.put("/:id", async (req, res) => {
 //================================================================================== DELETE property type ==========================================================================
 // DELETE /api/property-types/1
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireLogin, requireAdmin, async (req, res) => {
 
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {

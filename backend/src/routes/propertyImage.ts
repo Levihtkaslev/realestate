@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
 import { uploadPropertyImages, deleteFile, urlToDiskPath } from "../utils/upload";
+import { requireLogin } from "../middlewares/auth";
 
 const router = Router();
 
@@ -18,9 +19,10 @@ function removeUploadedFiles(files: Express.Multer.File[]) {
 //================================================================================== UPLOAD images ==========================================================================
 // POST /api/property-images/5      (5 = propertyId)
 // body: form-data, key "images" (type File), select 1 to 10 images
-// uploadPropertyImages.array(...) runs first: it saves the files to disk and puts them in req.files
+// LOGIN REQUIRED - only the owner (or ADMIN) of the property
+// order: requireLogin (no login -> stop, nothing saved) -> multer saves files -> our checks
 
-router.post("/:propertyId", uploadPropertyImages.array("images", 10), async (req, res) => {
+router.post("/:propertyId", requireLogin, uploadPropertyImages.array("images", 10), async (req, res) => {
 
   const files = req.files as Express.Multer.File[];
 
@@ -38,6 +40,12 @@ router.post("/:propertyId", uploadPropertyImages.array("images", 10), async (req
   if (!property) {
     removeUploadedFiles(files);
     return res.status(404).json({ message: "property not found" });
+  }
+
+  // OWNER CHECK
+  if (property.ownerId !== req.user.userId && req.user.role !== "ADMIN") {
+    removeUploadedFiles(files);
+    return res.status(403).json({ message: "you can add images only to your own property" });
   }
 
   // max 10 images per property in total
@@ -98,9 +106,9 @@ router.get("/by-property/:propertyId", async (req, res) => {
 
 
 //================================================================================== SET cover image ==========================================================================
-// PUT /api/property-images/12/cover      (12 = imageId)
+// PUT /api/property-images/12/cover      (12 = imageId)     LOGIN REQUIRED - owner only
 
-router.put("/:imageId/cover", async (req, res) => {
+router.put("/:imageId/cover", requireLogin, async (req, res) => {
 
   const imageId = Number(req.params.imageId);
   if (Number.isNaN(imageId)) {
@@ -110,6 +118,12 @@ router.put("/:imageId/cover", async (req, res) => {
   const image = await prisma.propertyImage.findUnique({ where: { id: imageId } });
   if (!image) {
     return res.status(404).json({ message: "image not found" });
+  }
+
+  // OWNER CHECK: find the property of this image, is it mine?
+  const property = await prisma.property.findUnique({ where: { id: image.propertyId } });
+  if (!property || (property.ownerId !== req.user.userId && req.user.role !== "ADMIN")) {
+    return res.status(403).json({ message: "you can change only your own property images" });
   }
 
   // $transaction = both steps succeed together or neither happens
@@ -133,9 +147,9 @@ router.put("/:imageId/cover", async (req, res) => {
 
 
 //================================================================================== DELETE image ==========================================================================
-// DELETE /api/property-images/12      (12 = imageId)
+// DELETE /api/property-images/12      (12 = imageId)     LOGIN REQUIRED - owner only
 
-router.delete("/:imageId", async (req, res) => {
+router.delete("/:imageId", requireLogin, async (req, res) => {
 
   const imageId = Number(req.params.imageId);
   if (Number.isNaN(imageId)) {
@@ -145,6 +159,12 @@ router.delete("/:imageId", async (req, res) => {
   const image = await prisma.propertyImage.findUnique({ where: { id: imageId } });
   if (!image) {
     return res.status(404).json({ message: "image not found" });
+  }
+
+  // OWNER CHECK: find the property of this image, is it mine?
+  const property = await prisma.property.findUnique({ where: { id: image.propertyId } });
+  if (!property || (property.ownerId !== req.user.userId && req.user.role !== "ADMIN")) {
+    return res.status(403).json({ message: "you can delete only your own property images" });
   }
 
   await prisma.propertyImage.delete({ where: { id: imageId } });

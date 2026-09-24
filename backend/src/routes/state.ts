@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
+import { requireLogin, requireAdmin } from "../middlewares/auth";
 
 const router = Router();
 
@@ -9,7 +10,7 @@ const router = Router();
 
 //================================================================================== POST state  ==========================================================================
 
-router.post("/", async (req, res) => {
+router.post("/", requireLogin, requireAdmin, async (req, res) => {
 
   const { name, code } = req.body;
 
@@ -84,7 +85,7 @@ router.get("/:id", async (req, res) => {
 
 //================================================================================== update state  ==========================================================================
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", requireLogin, requireAdmin, async (req, res) => {
 
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
@@ -137,7 +138,7 @@ router.put("/:id", async (req, res) => {
 //================================================================================== delete state  ==========================================================================
 // blocked while any city belongs to this state
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireLogin, requireAdmin, async (req, res) => {
 
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {

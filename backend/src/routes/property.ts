@@ -3,6 +3,7 @@ import { prisma } from "../prisma";
 import { Prisma } from "../generated/prisma/client";
 import { makeSlug } from "../utils/slug";
 import { deleteFile, urlToDiskPath } from "../utils/upload";
+import { requireLogin } from "../middlewares/auth";
 
 const router = Router();
 
@@ -31,23 +32,23 @@ const detailInclude = {
 
 
 //================================================================================== POST property ==========================================================================
-// POST /api/properties
-// body: { ownerId, title, description, listingType, price, areaSqft, propertyTypeId, cityId, localityId,
-//         bedrooms?, bathrooms?, furnishing?, address?, amenityIds?: [1, 2] }
 
-router.post("/", async (req, res) => {
+
+router.post("/", requireLogin, async (req, res) => {
 
   const {
-    ownerId, title, description, listingType, price, areaSqft,
+    title, description, listingType, price, areaSqft,
     propertyTypeId, cityId, localityId,
     bedrooms, bathrooms, furnishing, address, amenityIds,
   } = req.body;
 
-  
-  if (!ownerId || !title || !description || !listingType || !price || !areaSqft ||
+  // owner comes from the login token, never from the body
+  const ownerId = req.user.userId;
+
+  if (!title || !description || !listingType || !price || !areaSqft ||
       !propertyTypeId || !cityId || !localityId) {
     return res.status(400).json({
-      message: "ownerId, title, description, listingType, price, areaSqft, propertyTypeId, cityId, localityId are required",
+      message: "title, description, listingType, price, areaSqft, propertyTypeId, cityId, localityId are required",
     });
   }
 
@@ -62,9 +63,10 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ message: "furnishing must be FURNISHED, SEMI_FURNISHED or UNFURNISHED" });
   }
 
-  const owner = await prisma.user.findUnique({ where: { id: Number(ownerId) } });
+  // the user of the token must still exist (maybe deleted after login)
+  const owner = await prisma.user.findUnique({ where: { id: ownerId } });
   if (!owner) {
-    return res.status(400).json({ message: "invalid ownerId" });
+    return res.status(401).json({ message: "user not found, please login again" });
   }
 
   const propertyType = await prisma.propertyType.findUnique({ where: { id: Number(propertyTypeId) } });
@@ -155,23 +157,252 @@ router.get("/", async (req, res) => {
 
 
 
-//================================================================================== LIST properties of one owner ==========================================================================
-// GET /api/properties/by-owner/3   ("My listings" page - all statuses)
+//================================================================================== MY properties ==========================================================================
+// GET /api/properties/mine      LOGIN REQUIRED   ("My listings" page - all statuses)
+// NOTE: must stay ABOVE router.get("/:id"), otherwise "mine" is treated as an id
 
-router.get("/by-owner/:ownerId", async (req, res) => {
-
-  const ownerId = Number(req.params.ownerId);
-  if (Number.isNaN(ownerId)) {
-    return res.status(400).json({ message: "invalid ownerId" });
-  }
+router.get("/mine", requireLogin, async (req, res) => {
 
   const properties = await prisma.property.findMany({
-    where: { ownerId: ownerId },
+    where: { ownerId: req.user.userId },
     include: cardInclude,
     orderBy: { createdAt: "desc" },
   });
 
   res.json(properties);
+});
+
+
+
+
+//================================================================================== SEARCH properties ==========================================================================
+// GET /api/properties/search?listingType=SALE&cityId=5&bedrooms=2&minPrice=3000000&maxPrice=6000000&sort=price_asc
+// public page. only listingType is required, every other filter is optional.
+// sort: newest (default) | price_asc | price_desc
+// pagination (cursor): limit = how many per call (default 20, max 50)
+//                      cursor = "nextCursor" from the previous response (leave empty for the first call)
+// NOTE: must stay ABOVE router.get("/:id"), otherwise "search" is treated as an id
+
+router.get("/search", async (req, res) => {
+
+  const { listingType, cityId, localityId, propertyTypeId, bedrooms, minPrice, maxPrice, sort, cursor } = req.query;
+
+  // 1. listingType is required (Buy tab or Rent tab)
+  if (listingType !== "SALE" && listingType !== "RENT") {
+    return res.status(400).json({ message: "listingType must be SALE or RENT" });
+  }
+
+  // 2. start with the filters that are always there
+  const where: Prisma.PropertyWhereInput = {
+    status: "ACTIVE",
+    listingType: listingType,
+  };
+
+  // 3. add each filter only if the user sent it
+  if (cityId) {
+    where.cityId = Number(cityId);
+  }
+  if (localityId) {
+    where.localityId = Number(localityId);
+  }
+  if (propertyTypeId) {
+    where.propertyTypeId = Number(propertyTypeId);
+  }
+  if (bedrooms) {
+    where.bedrooms = Number(bedrooms);
+  }
+
+  // 4. budget: min only, max only, or both
+  if (minPrice || maxPrice) {
+    const priceFilter: Prisma.IntFilter = {};
+    if (minPrice) {
+      priceFilter.gte = Number(minPrice); // gte = greater than or equal
+    }
+    if (maxPrice) {
+      priceFilter.lte = Number(maxPrice); // lte = less than or equal
+    }
+    where.price = priceFilter;
+  }
+
+  // 5. every number must be a real number ("abc" is not allowed)
+  const numbersToCheck = [cityId, localityId, propertyTypeId, bedrooms, minPrice, maxPrice, cursor];
+  for (const value of numbersToCheck) {
+    if (value && Number.isNaN(Number(value))) {
+      return res.status(400).json({ message: "cityId, localityId, propertyTypeId, bedrooms, minPrice, maxPrice, cursor must be numbers" });
+    }
+  }
+
+  // how many items per call: default 20, never more than 50
+  let limit = 20;
+  if (req.query.limit) {
+    limit = Number(req.query.limit);
+    if (Number.isNaN(limit) || limit < 1) {
+      return res.status(400).json({ message: "limit must be a number from 1 to 50" });
+    }
+    if (limit > 50) {
+      limit = 50;
+    }
+  }
+
+  // 6. sorting. id is added as a tie-breaker: same price -> fixed order
+  let orderBy: Prisma.PropertyOrderByWithRelationInput[] = [{ createdAt: "desc" }, { id: "desc" }];
+
+  if (sort === "price_asc") {
+    orderBy = [{ price: "asc" }, { id: "asc" }];
+  }
+  if (sort === "price_desc") {
+    orderBy = [{ price: "desc" }, { id: "desc" }];
+  }
+
+  // 7. build the query. we ask for ONE extra row (limit + 1) only to know "is there a next page?"
+  const query: Prisma.PropertyFindManyArgs = {
+    where: where,
+    include: cardInclude,
+    orderBy: orderBy,
+    take: limit + 1,
+  };
+
+  // 8. cursor = "continue after this property id"
+  //    skip: 1 -> do not repeat the cursor property itself (it was the last item of the previous page)
+  if (cursor) {
+    query.cursor = { id: Number(cursor) };
+    query.skip = 1;
+  }
+
+  const properties = await prisma.property.findMany(query);
+
+  // 9. got the extra row? then there is a next page. remove the extra row before sending
+  let hasMore = false;
+  if (properties.length > limit) {
+    hasMore = true;
+    properties.pop();
+  }
+
+  // 10. the frontend sends this back as ?cursor=... to get the next page
+  let nextCursor = null;
+  if (hasMore) {
+    nextCursor = properties[properties.length - 1].id;
+  }
+
+  res.json({
+    items: properties,
+    hasMore: hasMore,
+    nextCursor: nextCursor,
+  });
+});
+
+
+
+
+//================================================================================== SIMILAR properties ==========================================================================
+// GET /api/properties/100/similar   (detail page -> "Similar properties", max 6)
+
+router.get("/:id/similar", async (req, res) => {
+
+  const id = Number(req.params.id);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ message: "invalid id" });
+  }
+
+  const property = await prisma.property.findUnique({ where: { id: id } });
+  if (!property) {
+    return res.status(404).json({ message: "property not found" });
+  }
+
+  // 1. candidates: same sale/rent, same city, same type, price +-30%, not itself
+  const where: Prisma.PropertyWhereInput = {
+    listingType: property.listingType,
+    status: "ACTIVE",
+    cityId: property.cityId,
+    propertyTypeId: property.propertyTypeId,
+    id: { not: property.id },
+    price: {
+      gte: Math.floor(property.price * 0.7),
+      lte: Math.ceil(property.price * 1.3),
+    },
+  };
+
+  // homes only: 2 BHK -> 1, 2 or 3 BHK
+  if (property.bedrooms !== null) {
+    where.bedrooms = { gte: property.bedrooms - 1, lte: property.bedrooms + 1 };
+  }
+
+  const candidates = await prisma.property.findMany({
+    where: where,
+    include: cardInclude,
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
+  // 2. score: same area +3, same BHK +2, closer price = more points (max +2)
+  const scored = [];
+  for (const candidate of candidates) {
+    let score = 0;
+
+    if (candidate.localityId === property.localityId) {
+      score = score + 3;
+    }
+    if (candidate.bedrooms === property.bedrooms) {
+      score = score + 2;
+    }
+
+    const gapPercent = (Math.abs(candidate.price - property.price) / property.price) * 100;
+    score = score + 2 * (1 - gapPercent / 30); // same price = 2, 30% away = 0
+
+    scored.push({ score: score, property: candidate });
+  }
+
+  // 3. highest score first, keep 6
+  scored.sort((a, b) => b.score - a.score);
+
+  let result = [];
+  for (const item of scored.slice(0, 6)) {
+    result.push(item.property);
+  }
+
+  // 4. less than 6? fill with newest from the same city (any type)
+  if (result.length < 6) {
+    const skipIds = [property.id];
+    for (const p of result) {
+      skipIds.push(p.id);
+    }
+
+    const extra = await prisma.property.findMany({
+      where: {
+        listingType: property.listingType,
+        status: "ACTIVE",
+        cityId: property.cityId,
+        id: { notIn: skipIds },
+      },
+      include: cardInclude,
+      orderBy: { createdAt: "desc" },
+      take: 6 - result.length,
+    });
+
+    result = result.concat(extra);
+  }
+
+  res.json(result);
+});
+
+
+
+
+//================================================================================== GET property by slug (SEO) ==========================================================================
+// GET /api/properties/slug/2-bhk-apartment-in-tambaram-mfx3k2a     PUBLIC
+// the frontend detail page URL uses the slug (good for Google), not the number id
+
+router.get("/slug/:slug", async (req, res) => {
+
+  const property = await prisma.property.findUnique({
+    where: { slug: req.params.slug }, // slug is unique -> fast lookup by its index
+    include: detailInclude,
+  });
+  if (!property) {
+    return res.status(404).json({ message: "property not found" });
+  }
+
+  res.json(property);
 });
 
 
@@ -205,9 +436,9 @@ router.get("/:id", async (req, res) => {
 // PUT /api/properties/1     send only the fields you want to change
 // body: { title?, description?, listingType?, price?, areaSqft?, bedrooms?, bathrooms?, furnishing?,
 //         address?, status?, propertyTypeId?, cityId?, localityId?, amenityIds? }
-// NOTE: "only the owner can edit" check comes with auth (step 8)
+// LOGIN REQUIRED - only the owner (or ADMIN) can edit
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", requireLogin, async (req, res) => {
 
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
@@ -217,6 +448,11 @@ router.put("/:id", async (req, res) => {
   const property = await prisma.property.findUnique({ where: { id: id } });
   if (!property) {
     return res.status(404).json({ message: "property not found" });
+  }
+
+  // OWNER CHECK: is this property mine?
+  if (property.ownerId !== req.user.userId && req.user.role !== "ADMIN") {
+    return res.status(403).json({ message: "you can edit only your own property" });
   }
 
   const {
@@ -338,9 +574,9 @@ router.put("/:id", async (req, res) => {
 
 //================================================================================== DELETE property ==========================================================================
 // DELETE /api/properties/1   (its amenity links are deleted automatically - Cascade)
-// NOTE: "only the owner can delete" check comes with auth (step 8)
+// LOGIN REQUIRED - only the owner (or ADMIN) can delete
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireLogin, async (req, res) => {
 
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
@@ -350,6 +586,11 @@ router.delete("/:id", async (req, res) => {
   const property = await prisma.property.findUnique({ where: { id: id } });
   if (!property) {
     return res.status(404).json({ message: "property not found" });
+  }
+
+  // OWNER CHECK: is this property mine?
+  if (property.ownerId !== req.user.userId && req.user.role !== "ADMIN") {
+    return res.status(403).json({ message: "you can delete only your own property" });
   }
 
   // get image urls first, so we can remove the files from disk after deleting

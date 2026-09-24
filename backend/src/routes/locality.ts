@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
+import { requireLogin, requireAdmin } from "../middlewares/auth";
 import { makeSlug } from "../utils/slug";
 
 const router = Router();
@@ -11,7 +12,7 @@ const withCity = { city: { select: { id: true, name: true, slug: true } } };
 
 //================================================================================== POST locality  ==========================================================================
 
-router.post("/", async (req, res) => {
+router.post("/", requireLogin, requireAdmin, async (req, res) => {
 
   const { name, cityId } = req.body;
 
@@ -105,7 +106,7 @@ router.get("/:id", async (req, res) => {
 
 //================================================================================== update locality  ==========================================================================
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", requireLogin, requireAdmin, async (req, res) => {
 
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
@@ -160,7 +161,7 @@ router.put("/:id", async (req, res) => {
 
 //================================================================================== delete locality  ==========================================================================
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireLogin, requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     return res.status(400).json({ message: "invalid id" });

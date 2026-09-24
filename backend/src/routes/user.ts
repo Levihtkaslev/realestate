@@ -1,8 +1,12 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../prisma";
+import { requireLogin, requireAdmin } from "../middlewares/auth";
 
 const router = Router();
+
+// every API in this file is ADMIN only (normal people sign up with POST /api/auth/register)
+router.use(requireLogin, requireAdmin);
 
 
 const userSelect = {

@@ -1,5 +1,6 @@
 // Seed = starting data that every setup needs.
 // Run: npx prisma db seed   (safe to run many times, it will not duplicate)
+import bcrypt from "bcryptjs";
 import { prisma } from "../src/prisma";
 
 // 28 states + 8 union territories of India
@@ -95,6 +96,22 @@ async function main() {
     });
   }
   console.log(`Seeded ${amenities.length} amenities`);
+
+  // one ADMIN account to manage masters (change the password in real use)
+  // nobody can become admin by register, only here
+  const adminEmail = "admin@realestate.local";
+  const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
+  if (!existingAdmin) {
+    await prisma.user.create({
+      data: {
+        name: "Admin",
+        email: adminEmail,
+        passwordHash: await bcrypt.hash("admin123", 10),
+        role: "ADMIN",
+      },
+    });
+    console.log("Created admin: " + adminEmail + " / admin123");
+  }
 }
 
 main()
