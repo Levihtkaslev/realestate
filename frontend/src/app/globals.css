@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+/* theme colours: bg-primary, text-primary, bg-primary-dark, bg-primary-light */
+@theme {
+  --color-primary: #0d9488;
+  --color-primary-dark: #0f766e;
+  --color-primary-light: #f0fdfa;
+
+  --font-sans: var(--font-geist-sans);
+
+  /* slow endless slide to the left (class: animate-marquee) */
+  --animate-marquee: marquee 45s linear infinite;
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+}
+
+/* always keep the scrollbar -> page width never changes -> no shaking */
+html {
+  overflow-y: scroll;
+}
+
+body {
+  background-color: #f9fafb;
+  color: #111827;
+}
+
+/* hand cursor on everything clickable (Tailwind 4 resets buttons to the arrow) */
+button,
+a,
+label,
+select,
+[role="tab"],
+[role="radio"],
+[role="option"],
+[role="switch"],
+[role="checkbox"],
+[role="menuitem"] {
+  cursor: pointer;
+}
+
+button:disabled,
+[data-disabled] {
+  cursor: not-allowed;
+}

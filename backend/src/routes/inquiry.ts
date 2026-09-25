@@ -119,7 +119,7 @@ router.get("/sent", requireLogin, async (req, res) => {
   const inquiries = await prisma.inquiry.findMany({
     where: { userId: req.user.userId },
     include: {
-      property: { select: { id: true, title: true, slug: true, price: true, status: true } },
+      property: { select: { id: true, title: true, slug: true, price: true, listingType: true, status: true } },
     },
     orderBy: { createdAt: "desc" },
   });
