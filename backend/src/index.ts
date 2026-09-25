@@ -26,8 +26,6 @@ if (!process.env.JWT_ACCESS_SECRET) {
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// API documentation page: http://localhost:5000/api-docs   (raw JSON: /api-docs.json)
-// placed BEFORE helmet: helmet's strict browser rules would block the page's own scripts on http
 app.get("/api-docs.json", (req, res) => {
   res.json(swaggerDocument);
 });
